@@ -1,0 +1,8 @@
+CREATE TABLE `eventi_partita` (
+  `id` int(11) NOT NULL,
+  `tipo_evento` enum('gol','giallo','rosso','altro') NOT NULL,
+  `minuto` int(11) DEFAULT NULL,
+  `giocatore` int(100) DEFAULT NULL,
+  `partita_id` int(11) NOT NULL,
+  `tempo` tinyint(4) NOT NULL DEFAULT 1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

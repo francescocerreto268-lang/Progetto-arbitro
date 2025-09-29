@@ -1,0 +1,10 @@
+CREATE TABLE `partite` (
+  `id` int(11) NOT NULL,
+  `s_casa` varchar(100) DEFAULT NULL,
+  `s_ospite` varchar(100) DEFAULT NULL,
+  `indirizzo` varchar(100) DEFAULT NULL,
+  `rimborso` float DEFAULT NULL,
+  `km_percorsi` float DEFAULT NULL,
+  `arbitro_id` int(11) NOT NULL,
+  `data_ora_partita` datetime DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

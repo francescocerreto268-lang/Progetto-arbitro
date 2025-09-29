@@ -1,0 +1,9 @@
+CREATE TABLE `dati_partite` (
+  `id` int(11) NOT NULL,
+  `partita_id` int(11) NOT NULL,
+  `km_percorsi` float DEFAULT NULL,
+  `note` varchar(500) DEFAULT NULL,
+  `gol_casa` int(11) NOT NULL DEFAULT 0,
+  `gol_ospite` int(11) NOT NULL DEFAULT 0,
+  `meteo` varchar(200) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
