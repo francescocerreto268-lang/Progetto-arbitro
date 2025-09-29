@@ -1,5 +1,9 @@
 <?php
 session_start();
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+include 'db.php';
 
 // 🔒 Controllo accesso
 if (empty($_SESSION['loggedin'])) {
@@ -7,123 +11,160 @@ if (empty($_SESSION['loggedin'])) {
     exit;
 }
 
-// Connessione DB
-include 'db.php';
+$arbitro_id = $_SESSION['id'];
+
+// ✅ Gestione eliminazione partita via POST
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['elimina_id'])) {
+    $id = (int) $_POST['elimina_id'];
+
+    $stmt = $conn->prepare("DELETE FROM partite WHERE id = ? AND arbitro_id = ?");
+    $stmt->bind_param("ii", $id, $arbitro_id);
+    $stmt->execute();
+
+    // Risposta semplice al fetch
+    echo "ok";
+    exit; // importante, interrompe il resto della pagina
+}
+
+// Recupero partite dell'arbitro con i risultati se disponibili
+$partite = $conn->query("
+    SELECT p.*, dp.gol_casa, dp.gol_ospite 
+    FROM partite p 
+    LEFT JOIN dati_partite dp ON p.id = dp.partita_id 
+    WHERE p.arbitro_id = $arbitro_id 
+    ORDER BY p.id DESC
+");
+
+// Calcola la somma totale dei rimborsi
+$totale_rimborsi = $conn->query("
+    SELECT SUM(rimborso) as totale 
+    FROM partite 
+    WHERE arbitro_id = $arbitro_id
+")->fetch_assoc();
+
+$totale = $totale_rimborsi['totale'] ?? 0;
+
+// Cartellini
+$cartellini_gialli = $conn->query("
+    SELECT * 
+    FROM eventi_partita ep
+    JOIN partite p ON ep.partita_id = p.id 
+    WHERE ep.tipo_evento ='giallo' AND p.arbitro_id = $arbitro_id
+")->fetch_all();
+$cartellini_rossi = $conn->query("
+    SELECT * 
+    FROM eventi_partita ep
+    JOIN partite p ON ep.partita_id = p.id 
+    WHERE ep.tipo_evento ='rosso' AND p.arbitro_id = $arbitro_id
+")->fetch_all();
+
+$numero_cartellini_gialli = sizeof($cartellini_gialli);
+$numero_parite = $partite->num_rows;
+$numero_cartellini_rossi = sizeof($cartellini_rossi);
+
+$media_gialli = $numero_parite > 0 ? $numero_cartellini_gialli / $numero_parite : 0;
+$media_rossi = $numero_parite > 0 ? $numero_cartellini_rossi / $numero_parite : 0;
 
 // Funzione per sanificare output
 function esc($s) {
     return htmlspecialchars($s ?? '', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
-
-// ID arbitro loggato
-$arbitro_id = (int)($_SESSION['id'] ?? 0);
-
-// Recupero partite dell'arbitro loggato
-$sql = "SELECT p.id, p.s_casa, p.s_ospite, p.indirizzo, p.rimborso, p.km_percorsi,
-               u.nome AS arbitro_nome, u.cognome AS arbitro_cognome
-        FROM partite p
-        LEFT JOIN utente u ON p.arbitro_id = u.id
-        WHERE p.arbitro_id = $arbitro_id
-        ORDER BY p.id DESC";
-
-$result = $conn->query($sql);
-
-// Calcolo totale rimborso
-$sql_totale = "SELECT SUM(rimborso) AS totale_rimborso FROM partite WHERE arbitro_id = $arbitro_id";
-$res_totale = $conn->query($sql_totale);
-$totale_rimborso = $res_totale->fetch_assoc()['totale_rimborso'] ?? 0;
 ?>
+
 <!DOCTYPE html>
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Lista Partite</title>
-    <!-- Bootstrap CSS -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Le mie partite</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
-<body>
+<body class="p-4">
 
-<!-- Navbar -->
-<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-    <div class="container">
-        <a class="navbar-brand" href="index.php">Arbitro App</a>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
-            aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-            <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="navbarNav">
-            <ul class="navbar-nav ms-auto">
-                <li class="nav-item"><a class="nav-link" href="index.php">Home</a></li>
-                <li class="nav-item"><a class="nav-link active" href="partite.php">Partite</a></li>
-                <li class="nav-item">
-                    <a class="nav-link" href="logout.php">Logout (<?= esc($_SESSION['nome'] ?? '') ?>)</a>
-                </li>
-            </ul>
-        </div>
-    </div>
-</nav>
+<h2>Le mie partite</h2>
 
-<!-- Container principale -->
-<div class="container mt-5">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2>Lista partite</h2>
-        <a href="add_partite.php" class="btn btn-success">➕ Aggiungi nuova partita</a>
-    </div>
+<a href="index.php" class="btn btn-outline-secondary mb-3">🔙 Torna alla home</a>
+<a href="add_partite.php" class="btn btn-primary mb-3">➕ Aggiungi partita</a>
 
-    <div class="table-responsive">
-        <table class="table table-bordered table-hover align-middle">
-            <thead class="table-primary">
-                <tr>
-                    <th>ID</th>
-                    <th>Squadra Casa</th>
-                    <th>Squadra Ospite</th>
-                    <th>Indirizzo</th>
-                    <th>Rimborso</th>
-                    <th>Km percorsi</th>
-                    <th>Arbitro</th>
-                    <th>Resoconto</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php if ($result->num_rows > 0): ?>
-                    <?php while ($row = $result->fetch_assoc()): ?>
-                        <tr>
-                            <td><?= esc($row['id']) ?></td>
-                            <td><?= esc($row['s_casa']) ?></td>
-                            <td><?= esc($row['s_ospite']) ?></td>
-                            <td><?= esc($row['indirizzo']) ?></td>
-                            <td><?= esc($row['rimborso']) ?> €</td>
-                            <td><?= esc($row['km_percorsi']) ?> km</td>
-                            <td><?= esc($row['arbitro_nome'] . " " . $row['arbitro_cognome']) ?></td>
-                            <td>
-                                <a href="resoconto_partita.php?id=<?= esc($row['id']) ?>" class="btn btn-info btn-sm">
-                                    📄 Visualizza / Aggiungi
-                                </a>
-                            </td>
-                        </tr>
-                    <?php endwhile; ?>
-                <?php else: ?>
-                    <tr>
-                        <td colspan="8" class="text-center">Nessuna partita trovata.</td>
-                    </tr>
-                <?php endif; ?>
-            </tbody>
-        </table>
-
-        <!-- Totale rimborso -->
-        <div class="mt-3">
-            <h5>💰 Totale rimborso: <?= esc(number_format($totale_rimborso, 2)) ?> €</h5>
-        </div>
-    </div>
+<div class="alert alert-info mb-3">
+    <h5>Totale rimborsi : <strong><?= esc(number_format($totale, 2)) ?> €</strong></h5>
+    <h5>Media gialli : <strong><?= esc(number_format($media_gialli, 2)) ?></strong></h5>
+    <h5>Media rossi : <strong><?= esc(number_format($media_rossi, 2)) ?></strong></h5>
 </div>
 
-<!-- Footer -->
-<footer class="bg-light text-center text-muted py-3 mt-5">
-    &copy; <?= date('Y') ?> Arbitro App
-</footer>
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Squadra Casa</th>
+            <th>Squadra Ospite</th>
+            <th>Risultato</th>
+            <th>Indirizzo</th>
+            <th>Rimborso</th>
+            <th>Km Percorsi</th>
+            <th>Data e ora</th>
+            <th>Azioni</th>
+        </tr>
+    </thead>
+    <tbody>
+        <?php if ($partite->num_rows > 0): ?>
+            <?php while ($partita = $partite->fetch_assoc()): ?>
+                <tr id="row-<?= esc($partita['id']) ?>">
+                    <td><?= esc($partita['id']) ?></td>
+                    <td><?= esc($partita['s_casa']) ?></td>
+                    <td><?= esc($partita['s_ospite']) ?></td>
+                    <td>
+                        <?php if (!empty($partita['gol_casa']) || !empty($partita['gol_ospite'])): ?>
+                            <strong><?= esc($partita['gol_casa'] ?? 0) ?> - <?= esc($partita['gol_ospite'] ?? 0) ?></strong>
+                        <?php else: ?>
+                            <span class="text-muted">Non disputata</span>
+                        <?php endif; ?>
+                    </td>
+                    <td><?= esc($partita['indirizzo']) ?></td>
+                    <td><?= esc($partita['rimborso']) ?> €</td>
+                    <td><?= esc($partita['km_percorsi']) ?> km</td>
+                    <td><?= esc($partita['data_ora_partita']) ?></td>
+                    <td>
+                        <a href="resoconto_partita.php?id=<?= $partita['id'] ?>" class="btn btn-sm btn-info">📊 Resoconto</a>
+                        <a href="resoconto_partita.php?id=<?= $partita['id'] ?>" class="btn btn-sm btn-warning">✏️ Modifica</a>
+                        <button class="btn btn-sm btn-danger btn-elimina" data-id="<?= $partita['id'] ?>">🗑 Elimina</button>
+                    </td>
+                </tr>
+            <?php endwhile; ?>
+        <?php else: ?>
+            <tr>
+                <td colspan="9" class="text-center">Nessuna partita trovata.</td>
+            </tr>
+        <?php endif; ?>
+    </tbody>
+</table>
 
-<!-- Bootstrap JS -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+document.querySelectorAll('.btn-elimina').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const id = this.dataset.id;
+        if (confirm('Eliminare questa partita?')) {
+            const formData = new FormData();
+            formData.append('elimina_id', id);
+
+            fetch('partite.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.text())
+            .then(data => {
+                if (data.trim() === 'ok') {
+                    alert('Partita eliminata!');
+                    document.getElementById('row-' + id).remove();
+                } else {
+                    alert('Errore durante l\'eliminazione');
+                }
+            })
+            .catch(err => alert('Errore: ' + err));
+        }
+    });
+});
+</script>
+
 </body>
 </html>
